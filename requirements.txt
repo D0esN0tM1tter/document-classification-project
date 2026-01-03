@@ -1,0 +1,17 @@
+# VisionPreprocessor dependencies
+opencv-python
+numpy
+Pillow
+pdf2image
+# VisionService dependencies
+torch
+transformers
+# NLPModule dependencies
+pytesseract
+PyPDF2
+pandas
+nltk
+fastapi
+uvicorn
+python-multipart
+pandas
