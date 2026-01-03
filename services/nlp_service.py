@@ -8,6 +8,20 @@ from nltk.stem.snowball import FrenchStemmer
 from nltk.tokenize import word_tokenize
 import nltk
 
+"""
+Tesseract Windows Specific
+
+# For Windows - Configure Tesseract path
+# Update this path if Tesseract is installed elsewhere
+if os.name == 'nt':  # Windows
+    tesseract_path = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+    if os.path.exists(tesseract_path):
+        pytesseract.pytesseract.tesseract_cmd = tesseract_path
+    else:
+        print("⚠ Warning: Tesseract not found at default location")
+        print("  Please update tesseract_path in nlp_module.py")
+"""
+
 # Download required NLTK data (run once)
 try:
     # Attempt to download the 'punkt' tokenizer data for NLTK
