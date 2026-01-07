@@ -1,0 +1,31 @@
+================================================================================
+EVALUATION REPORT
+================================================================================
+
+Overall Metrics:
+  Accuracy:  1.0000
+  Precision: 1.0000
+  Recall:    1.0000
+  F1 Score:  1.0000
+  Support:   36
+
+Confusion Matrix:
+                    Predicted
+                    Transaction  Non-Transaction
+Actual Transaction        17            0
+       Non-Transaction     0           19
+
+Detailed Classification Report:
+
+  transaction:
+    Precision: 1.0000
+    Recall:    1.0000
+    F1-Score:  1.0000
+    Support:   17.0
+
+  non-transaction:
+    Precision: 1.0000
+    Recall:    1.0000
+    F1-Score:  1.0000
+    Support:   19.0
+================================================================================

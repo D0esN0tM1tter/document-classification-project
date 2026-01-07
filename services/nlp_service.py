@@ -7,6 +7,10 @@ import pandas as pd
 from nltk.stem.snowball import FrenchStemmer
 from nltk.tokenize import word_tokenize
 import nltk
+import numpy as np
+
+
+
 
 """
 Tesseract Windows Specific
@@ -31,9 +35,15 @@ except Exception as e:
     raise RuntimeError("Failed to download NLTK 'punkt' data. Please check your internet connection or NLTK setup.") from e
 
 
+
+# Helper function to normalize the frequency - Treshold comparison into probability :
+def nlp_score(frequency , trehshold) :
+    return float(1 / (1 + np.exp(-(frequency - trehshold))))
+
+
 class NLPModule :
 
-    def __init__(self, keywords_path='data/keywords.txt', keyword_threshold=5):
+    def __init__(self, keywords_path='data/keywords.txt', keyword_threshold=10):
         """
         Initialize NLP module
         
@@ -176,8 +186,10 @@ class NLPModule :
             matched: list of matched keywords
         """
         count, matched = self.count_keyword_matches(text)
-        if count >= self.keyword_threshold:
+
+        if nlp_score(count , self.keyword_threshold) >= 0.5 :
             return 'transaction', count, matched
+        
         else:
             return 'non-transaction', count, matched
         
@@ -197,7 +209,9 @@ class NLPModule :
         prediction, count, matched = self.predict(text)
         # Normalize score to [0, 1] based on number of keywords matched
         max_possible = len(self.keywords) if self.keywords else 1
-        score = count / max_possible if max_possible > 0 else 0.0
+
+        score = nlp_score(count , self.keyword_threshold)
+
         return {
             'prediction': prediction,
             'score': score,
@@ -205,6 +219,9 @@ class NLPModule :
             'raw_count': count,
             'max_possible': max_possible
         }
+
+
+
 
 
 

@@ -3,9 +3,13 @@ opencv-python
 numpy
 Pillow
 pdf2image
+
 # VisionService dependencies
 torch
 transformers
+scikit-image
+torchvision
+
 # NLPModule dependencies
 pytesseract
 PyPDF2

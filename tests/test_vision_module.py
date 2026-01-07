@@ -1,5 +1,5 @@
 # Simple script to test VisionService
-from services.vision_service import VisionService
+from services.vit_vision_service import VisionService
 
 if __name__ == "__main__":
 

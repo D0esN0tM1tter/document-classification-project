@@ -1,10 +1,12 @@
 # app.py
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from schemas.classification_response import ClassificationResponse
 import uuid
 from services.fusion_service import MultimodalDocumentClassifier
 import shutil
 import os
+import numpy as np
 
 NLP_KEYWORDS_PATH       = os.getenv("NLP_KEYWORDS_PATH" , "data/keywords.txt") 
 VISION_MODEL_IDENTIFIER = os.getenv("VISION_MODEL_IDENTIFIER" , "google/vit-base-patch16-224-in21k")
@@ -12,18 +14,21 @@ VISION_REFERENCES       = os.getenv("VISION_REFERENCES" , "data/references")
 UPLOADS_PATH            = os.getenv("UPLOADS_PATH" , "data/uploads")
 app = FastAPI()
 
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:8080"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 def get_classifier() :
     """
     Dependency that provides an instance of MultimodalDocumentClassifier
     configured with environment variables or default values.
     """
-    classifier = MultimodalDocumentClassifier(
-        nlp_keywords_path     = NLP_KEYWORDS_PATH , 
-        nlp_keyword_threshold = 5 , 
-        vision_references_dir = VISION_REFERENCES , 
-        vision_model_name     = VISION_MODEL_IDENTIFIER , 
-        fusion_weight_nlp     = 0.5
-    )
+    classifier = MultimodalDocumentClassifier()
     return classifier
 
 @app.post("/classify-document", response_model=ClassificationResponse)
@@ -57,7 +62,12 @@ def classify_document(
 
     # ---- synchronous inference ----
     try:
-        result = classifier.process_document(pdf_path=filepath)
+        result = classifier.predict(pdf_path=filepath)
+        
+        # Convert numpy types to native Python types
+        if isinstance(result, dict):
+            result = {k: float(v) if isinstance(v, (np.floating, np.integer)) else v 
+                     for k, v in result.items()}
         
     except Exception as e:
         raise HTTPException(status_code=500, detail="Document processing failed") from e
@@ -65,7 +75,6 @@ def classify_document(
     return result
 
 
-# ...existing code...
 
 @app.get("/healthcheck")
 async def healthcheck():

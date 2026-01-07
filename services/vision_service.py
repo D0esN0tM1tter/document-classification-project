@@ -1,186 +1,86 @@
-
-import os
-import torch
 import numpy as np
-from transformers import ViTModel, ViTImageProcessor
-from services.vision_preprocessing import VisionPreprocessor
-from typing import List, Dict, Any, Union
-from PIL import Image
 import os
-import logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("VisionService")
+from services.vision_preprocessing import VisionPreprocessor
+from PIL import Image
+from services.vit_feature_extractor import ViTFeatureExtractor
+from services.cnn_feature_extractor import CNNFeatureExtractor
+from services.hog_feature_extractor import HOGFeatureExtractor
+from services.similarity_measure import Similarity
 
-class VisionService:
-    """
-    VisionService encapsulates the workflow for document image classification using a Vision Transformer.
-    It provides methods for model loading, reference vector creation, feature extraction, similarity computation,
-    and a full document processing pipeline returning a rich result dictionary.
-    """
+class VisionModule :
 
-    def __init__(self, references_dir : str , model_name: str = "google/vit-base-patch16-224-in21k"):
+    def __init__(self , references_dir : str = "data/references"  , strategy = "vit"):
 
-        self.model_name = model_name
+        self.references_dir    = references_dir
+        self.preprocessor      = VisionPreprocessor()
+        self.similarity        = Similarity()
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # load the models to memeory only on demand :
+        if strategy == "vit" : 
+            self.feature_extractor = ViTFeatureExtractor()
 
-        self.model, self.processor = self.load_model()
+        elif strategy == "cnn" :
+            self.feature_extractor = CNNFeatureExtractor()
 
-        self.model.eval()
-
-        self.preprocessor = VisionPreprocessor()
-
-        self.references_dir = references_dir
-
-        self.reference_vector = self.preprocess_references(references_dir=self.references_dir)
+        elif strategy == "hog" : 
+            self.feature_extractor = HOGFeatureExtractor() 
         
+        else :
+            raise ValueError("Unupported strategy.")
 
-    def load_model(self):
-        """
-        Loads the ViT model and processor from Hugging Face.
-        """
-        model = ViTModel.from_pretrained(self.model_name).to(self.device)
-        processor = ViTImageProcessor.from_pretrained(self.model_name) 
+        self.references_vector = self.process_references(references_dir=self.references_dir)
 
-        return model , processor
 
-    def preprocess_references(self, references_dir: str):
-        """
-        Produces encoded features for the 'banking_transaction' class based on reference documents in a directory.
-        Args:
-            references_dir: Directory containing PDF files representing banking transactions.
-        Sets self.reference_vector = representative feature vector for banking transactions.
-        """
+    
+    def process_document(self , document_path) ->  np.ndarray: 
         
-        features = []
+        features_list = []
+        images   = self.preprocessor.convert_pdf_to_image(pdf_path=document_path)
 
-        pdf_files = [os.path.join(references_dir, f) for f in os.listdir(references_dir) if f.lower().endswith('.pdf')]
+        for img in images :
+            img_np   = self.preprocessor.preprocess(img)
+            features = self.extract_features(image=img_np)
+            features_list.append(features)
 
-        if not pdf_files:
-            logger.warning(f"No PDF files found in references_dir: {references_dir}")
+        if len(features_list) == 1 :
+            return features_list[0]
 
-        for pdf_path in pdf_files:
-
-            try:
-                images = self.preprocessor.convert_pdf_to_image(pdf_path)
-
-                if not images:
-                    logger.warning(f"No images extracted from PDF: {pdf_path}")
-
-                for idx, img in enumerate(images):
-
-                    try:
-                        img_np = self.preprocessor.preprocess(img)
-
-                        feat = self.extract_features(img_np)
-
-                        if feat is None or (hasattr(feat, 'size') and feat.size == 0):
-
-                            logger.warning(f"Feature extraction returned None/empty for PDF: {pdf_path}, image index: {idx}")
-                        else:
-                            features.append(feat)
-
-                    except Exception as fe:
-                        logger.error(f"Feature extraction failed for PDF: {pdf_path}, image index: {idx}, error: {fe}")
-
-            except Exception as e:
-                logger.error(f"Failed to process PDF: {pdf_path}, error: {e}")
-
-        if not features:
-            logger.error(f"No features extracted from any reference PDF in directory: {references_dir}")
-            
-        return np.mean(features, axis=0) if features else None
-
-    def extract_features(self, image: Union[np.ndarray, Any]) -> np.ndarray:
-        """
-        Performs forward pass through the transformer and extracts the encoder's result.
-        Args:
-            image: Preprocessed image as numpy array (H, W, C) or PIL Image
-        Returns:
-            np.ndarray: Feature vector from the transformer (CLS token)
-        """
+        return np.mean(features_list , axis=0)
 
 
-        if isinstance(image, np.ndarray):
-            image = Image.fromarray(image)
-        inputs = self.processor(images=image, return_tensors="pt")
-        inputs = {k: v.to(self.device) for k, v in inputs.items()}
-        with torch.no_grad():
-            outputs = self.model(**inputs)
-            features = outputs.last_hidden_state[:, 0, :].cpu().numpy().squeeze()
-        return features
+    def process_references(self , references_dir : str ) -> np.ndarray  :
 
-    def compute_similarity(self, vec1: np.ndarray, vec2: np.ndarray) -> float:
-        """
-        Computes cosine similarity between two vectors.
-        """
-        if np.linalg.norm(vec1) == 0 or np.linalg.norm(vec2) == 0:
-            return 0.0
-        return float(np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2)))
+        features_list = []
+        pdf_files     = [os.path.join(references_dir , f ) for f in os.listdir(references_dir) if f.endswith('.pdf')]
 
-    def classify_image(self, image: Union[np.ndarray, Any]) -> Dict[str, float]:
-        """
-        Classifies the input image as 'banking_transaction' or 'not_banking_transaction' based on similarity to the reference vector.
-        Args:
-            image: Preprocessed image as numpy array or PIL Image
-        Returns:
-            Dict[str, float]: Dictionary with similarity score for 'banking_transaction'.
-        """
-        if self.reference_vector is None:
-            raise ValueError("Reference vector for 'banking_transaction' not set. Run preprocess_references first.")
-        feat = self.extract_features(image)
-        score = self.compute_similarity(feat, self.reference_vector)
-        return {"banking_transaction": score}
-
-    def process_document(self, pdf_path: str) -> dict:
-        """
-        Encapsulates the full vision workflow: PDF to images, preprocessing, feature extraction, similarity scoring.
-        Returns a rich dictionary with all relevant details and error handling.
-       
-        """
-
-        result = {
-            'score': None,
-            'scores': [],
-            'num_images': 0,
-            'pdf_path': pdf_path,
-            'reference_vector_set': self.reference_vector is not None,
-            'error': None
-        }
-
-        if not result['reference_vector_set']:
-            result['error'] = "Reference vector for 'banking_transaction' not set. Run preprocess_references first."
-            return result
+        for pdf_file in pdf_files :
+            features = self.process_document(document_path=pdf_file) 
+            features_list.append(features)
         
-        try:
-
-            images = self.preprocessor.convert_pdf_to_image(pdf_path)
-
-            result['num_images'] = len(images)
-
-            for img in images:
-
-                try:
-                    img_np = self.preprocessor.preprocess(img)
-
-                    feat = self.extract_features(img_np)
-
-                    score = self.compute_similarity(feat, self.reference_vector)
-
-                    result['scores'].append(score)
+        return np.mean(features_list , axis=0)
 
 
-                except Exception as page_e:
+    def extract_features(self , image :Image.Image | np.ndarray) -> np.ndarray :
+        # prepocess the input image (light preprocessing) :
+        image    =  self.preprocessor.preprocess(image=image)
+        return self.feature_extractor.extract_features(image)
+    
+    def predict(self , document_path : str , similarity_measure : str = "cosine") -> dict : 
+        # preprocess and extract image features :
+        features = self.process_document(document_path=document_path) 
 
-                    result['scores'].append(0.0)
+        # compute similarity with reference documents : 
+        score = self.similarity.compute_similarity(features_1=features , features_2=self.references_vector , strategy=similarity_measure) 
+
+        return {'score' : float(score) , 'path' : document_path}
+    
 
 
-            if result['scores']:
+if __name__ == "__main__" : 
 
-                result['score'] = float(np.mean(result['scores']))
+    module = VisionModule() 
 
-            else:
-                result['score'] = 0.0
-        except Exception as e:
-            result['error'] = str(e)
-        return result
+    prediction = module.predict(document_path="data/test/document_2.pdf")
+
+    print(prediction)
+
